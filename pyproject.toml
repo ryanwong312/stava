@@ -1,0 +1,21 @@
+[project]
+name = "stava"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "ryan",email = "wongryan312@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
+[tool.poetry.dependencies]
+flask = "^3.1.2"
+flask-wtf = "^1.2.2"
+gpxpy = "^1.6.2"
+fitparse = "^1.6.0"

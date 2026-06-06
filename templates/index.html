@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+	<div style="display:flex; gap:16px; height:100vh; overflow:hidden;">
+		<div style="flex:1; display:flex; flex-direction:column; gap:16px; overflow:hidden;">
+			<div>
+				<h1 style="color:#0b6fb5; margin:0 0 6px 0;">Run Map</h1>
+				<p style="margin:0; font-size:14px; color:#666;">Upload your sports activities downloaded from Strava to see them plotted on this interactive map. Customize colors, line widths, and explore your fitness journey!</p>
+			</div>
+			<div id="map" style="flex:1; border-radius:8px; overflow:hidden;"></div>
+		</div>
+
+		<div style="width:340px; display:flex; flex-direction:column; gap:16px; height:100vh; overflow-y:auto;">
+			<!-- Filters Box (Top) -->
+			<div style="background:white; padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1);">
+				<h3 style="margin-top:0;color:#0b6fb5">Filters</h3>
+				
+				<label style="display:block; margin-bottom:8px;">Min distance (km): <span id="minVal">0</span></label>
+				<input id="minRange" type="range" min="0" max="50" step="0.1" value="0" style="width:100%;" />
+
+				<label style="display:block; margin-top:12px; margin-bottom:8px;">Max distance (km): <span id="maxVal">50</span></label>
+				<input id="maxRange" type="range" min="0" max="100" step="0.1" value="100" style="width:100%;" />
+
+				<div style="margin-top:12px;">
+					<label style="display:block; margin-bottom:6px; font-weight:600;">Activity Type:</label>
+					<label style="display:block; margin:4px 0;"><input type="checkbox" id="typeRun" checked /> Run</label>
+					<label style="display:block; margin:4px 0;"><input type="checkbox" id="typeWalk" checked /> Walk</label>
+					<label style="display:block; margin:4px 0;"><input type="checkbox" id="typeBike" checked /> Bike</label>
+				</div>
+
+				<label style="display:block; margin-top:12px; margin-bottom:4px;">Search by date:</label>
+				<input id="dateSearch" type="date" style="width:100%; padding:4px; border:1px solid #ddd; border-radius:4px;" />
+
+				<!-- Global Formatting Controls -->
+				<div style="margin-top:12px; padding:10px; background:#f9f9f9; border-radius:6px; border:1px solid #e0e0e0;">
+					<label style="display:block; margin-bottom:8px; font-weight:600; font-size:12px;">Global Formatting:</label>
+					<label style="display:block; margin-bottom:8px;"><input type="radio" id="globalModeAll" name="globalMode" value="all" checked /> Apply to ALL runs</label>
+					<label style="display:block; margin-bottom:8px;"><input type="radio" id="globalModeSelected" name="globalMode" value="selected" /> Apply to SELECTED only</label>
+					
+					<label style="display:block; margin-top:8px; margin-bottom:4px; font-size:12px;">Color:</label>
+					<input id="globalColor" type="color" value="#003f5c" style="width:100%; height:32px; cursor:pointer; border:1px solid #ddd; border-radius:4px;" />
+
+					<label style="display:block; margin-top:8px; margin-bottom:4px; font-size:12px;">Width: <span id="globalWidthVal">4</span>px</label>
+					<input id="globalWidth" type="range" min="1" max="12" value="4" style="width:100%;" />
+				</div>
+
+				<div style="margin-top:12px; display:flex; gap:6px;">
+					<a class="btn" href="/{{ BASE_URL }}/import" style="flex:1; text-align:center; padding:6px; font-size:12px;">Import</a>
+					<button id="refreshBtn" class="btn" style="background:#005f8a; flex:1; font-size:12px;">Refresh</button>
+				</div>
+
+				<hr />
+				<strong style="font-size:12px;">Activities</strong>
+				<div id="activityList" style="max-height:150px; overflow:auto; margin-top:8px;"></div>
+			</div>
+
+			<!-- Stats Box -->
+			<div style="background:white; padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); flex:1; overflow-y:auto;">
+				<h3 style="margin-top:0;color:#0b6fb5">Statistics</h3>
+				<div id="statsBox" style="font-size:12px;">
+					<div style="margin:8px 0;">Loading stats...</div>
+				</div>
+			</div>
+
+			<!-- Details -->
+			<div style="background:white; padding:12px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); max-height:200px; overflow-y:auto;">
+				<div id="details" style="font-size:12px;">
+					<div style="margin:8px 0;">Select an activity to view details</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+	<script>
+		const BASE_URL = "{{ BASE_URL }}";
+		const GOOGLE_MAPS_API_KEY = "{{ GOOGLE_MAPS_API_KEY }}";
+		let allActivities = [];
+		let polylines = {};
+
+		async function loadActivities() {
+			const minKm = parseFloat(document.getElementById('minRange').value) || 0;
+			const res = await fetch(`/${BASE_URL}/api/activities?min_km=${minKm}`);
+			allActivities = await res.json();
+			renderActivities();
+		}
+
+		function renderActivities() {
+			const actList = document.getElementById('activityList');
+			actList.innerHTML = '';
+			allActivities.forEach(act => {
+				const item = document.createElement('div');
+				item.style.cssText = 'padding:6px; margin:4px 0; background:#f5f5f5; border-radius:4px; cursor:pointer; font-size:11px;';
+				item.textContent = `${act.name} - ${act.distance_km.toFixed(1)}km`;
+				item.addEventListener('click', () => selectActivity(act));
+				actList.appendChild(item);
+			});
+		}
+
+		function selectActivity(act) {
+			const details = document.getElementById('details');
+			details.innerHTML = `
+				<div style="font-size:11px;">
+					<strong>${act.name}</strong><br/>
+					Distance: ${act.distance_km.toFixed(2)}km<br/>
+					Time: ${act.duration_seconds ? Math.round(act.duration_seconds / 60) + ' min' : 'N/A'}<br/>
+					Started: ${act.start_time || 'N/A'}<br/>
+				</div>
+			`;
+		}
+
+		function initMap() {
+			const map = L.map('map').setView([40, -95], 4);
+			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				attribution: '© OpenStreetMap contributors',
+				maxZoom: 19
+			}).addTo(map);
+
+			loadActivities().then(() => {
+				allActivities.forEach(act => {
+					if (act.coords && act.coords.length) {
+						const latlngs = act.coords.map(c => [c[0], c[1]]);
+						const polyline = L.polyline(latlngs, { color: '#003f5c', weight: 4 }).addTo(map);
+						polylines[act.id] = polyline;
+					}
+				});
+			});
+		}
+
+		document.getElementById('minRange').addEventListener('change', loadActivities);
+		document.getElementById('refreshBtn').addEventListener('click', loadActivities);
+		document.getElementById('globalColor').addEventListener('change', (e) => {
+			Object.values(polylines).forEach(p => p.setStyle({ color: e.target.value }));
+		});
+		document.getElementById('globalWidth').addEventListener('change', (e) => {
+			document.getElementById('globalWidthVal').textContent = e.target.value;
+			Object.values(polylines).forEach(p => p.setStyle({ weight: parseInt(e.target.value) }));
+		});
+
+		initMap();
+	</script>
+
+{% endblock %}
